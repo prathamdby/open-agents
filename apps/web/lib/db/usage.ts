@@ -1,7 +1,6 @@
 import { isToolUIPart, type LanguageModel, type UIMessage } from "ai";
 import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import type { UsageDateRange } from "@/lib/usage/date-range";
 import { db } from "./client";
 import { usageEvents } from "./schema";
 
@@ -60,6 +59,11 @@ export interface DailyUsage {
   outputTokens: number;
   messageCount: number;
   toolCallCount: number;
+}
+
+export interface UsageDateRange {
+  from: string;
+  to: string;
 }
 
 export interface UsageHistoryOptions {

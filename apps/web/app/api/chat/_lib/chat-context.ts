@@ -73,29 +73,28 @@ function toErrorResponse(
 export async function requireAuthenticatedUser(
   format: ResponseFormat = "json",
 ): Promise<AuthenticatedUserResult> {
-  const session = await getServerSession();
-  if (!session?.user) {
+  try {
+    const session = await getServerSession();
+    return {
+      ok: true,
+      userId: session.user.id,
+    };
+  } catch {
     return {
       ok: false,
-      response: toErrorResponse("Not authenticated", 401, format),
+      response: toErrorResponse("GITHUB_PAT is not configured", 401, format),
     };
   }
-
-  return {
-    ok: true,
-    userId: session.user.id,
-  };
 }
 
 export async function requireOwnedSessionChat(
   params: RequireOwnedSessionChatParams,
 ): Promise<OwnedSessionChatResult> {
   const {
-    userId,
+    userId: _userId,
     sessionId,
     chatId,
     format = "json",
-    forbiddenMessage = "Forbidden",
     requireActiveSandbox = false,
     sandboxInactiveMessage = "Sandbox not initialized",
   } = params;
@@ -109,13 +108,6 @@ export async function requireOwnedSessionChat(
     return {
       ok: false,
       response: toErrorResponse("Session not found", 404, format),
-    };
-  }
-
-  if (sessionRecord.userId !== userId) {
-    return {
-      ok: false,
-      response: toErrorResponse(forbiddenMessage, 403, format),
     };
   }
 
@@ -144,7 +136,7 @@ export async function requireOwnedChatById(
   params: RequireOwnedChatByIdParams,
 ): Promise<OwnedChatByIdResult> {
   const {
-    userId,
+    userId: _userId,
     chatId,
     format = "json",
     forbiddenMessage = "Forbidden",
@@ -159,7 +151,7 @@ export async function requireOwnedChatById(
   }
 
   const sessionRecord = await getSessionById(chat.sessionId);
-  if (!sessionRecord || sessionRecord.userId !== userId) {
+  if (!sessionRecord) {
     return {
       ok: false,
       response: toErrorResponse(forbiddenMessage, 403, format),

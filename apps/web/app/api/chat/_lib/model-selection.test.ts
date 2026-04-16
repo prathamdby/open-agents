@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { BUILT_IN_VARIANTS, type ModelVariant } from "@/lib/model-variants";
-import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
+import { getDefaultModelId } from "@/lib/models";
 import { resolveChatModelSelection } from "./model-selection";
 
 describe("resolveChatModelSelection", () => {
+  const defaultModelId = getDefaultModelId();
+
   test("returns direct model ids unchanged", () => {
     const selection = resolveChatModelSelection({
       selectedModelId: "openai/gpt-5",
@@ -79,7 +81,7 @@ describe("resolveChatModelSelection", () => {
       });
 
       expect(selection).toEqual({
-        id: APP_DEFAULT_MODEL_ID,
+        id: defaultModelId,
       });
       expect(warnings).toEqual([
         [
@@ -99,7 +101,7 @@ describe("resolveChatModelSelection", () => {
     });
 
     expect(selection).toEqual({
-      id: APP_DEFAULT_MODEL_ID,
+      id: defaultModelId,
     });
   });
 });

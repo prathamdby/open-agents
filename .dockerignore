@@ -1,0 +1,13 @@
+.git
+.cursor
+.agents
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+*.log
+.env
+.env.*
+!.env.example

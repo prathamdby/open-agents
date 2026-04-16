@@ -1,6 +1,9 @@
-import type { SharedChatStatusData } from "@/app/shared/[shareId]/shared-chat-status-utils";
 import { getChatById } from "@/lib/db/sessions";
 import { getShareByIdCached } from "@/lib/db/sessions-cache";
+
+export interface SharedChatStatusData {
+  isStreaming: boolean;
+}
 
 /**
  * Resolve a shareId to a minimal public status payload.

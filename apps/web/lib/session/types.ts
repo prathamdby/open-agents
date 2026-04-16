@@ -1,19 +1,5 @@
-export interface Session {
-  created: number;
-  authProvider: "vercel" | "github";
-  user: {
-    id: string;
-    username: string;
-    email: string | undefined;
-    avatar: string;
-    name?: string;
-  };
-}
+import type { GitHubUser } from "@/lib/github/pat";
 
-export interface SessionUserInfo {
-  user: Session["user"] | undefined;
-  authProvider?: "vercel" | "github";
-  hasGitHub?: boolean;
-  hasGitHubAccount?: boolean;
-  hasGitHubInstallations?: boolean;
+export interface Session {
+  user: GitHubUser;
 }

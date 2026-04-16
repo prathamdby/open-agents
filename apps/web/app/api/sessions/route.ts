@@ -1,15 +1,11 @@
 import { nanoid } from "nanoid";
+import type { SandboxState } from "@open-harness/sandbox";
 import {
-  countSessionsByUserId,
   createSessionWithInitialChat,
   getArchivedSessionCountByUserId,
   getSessionsWithUnreadByUserId,
   getUsedSessionTitles,
 } from "@/lib/db/sessions";
-import {
-  getVercelProjectLinkByRepo,
-  upsertVercelProjectLink,
-} from "@/lib/db/vercel-project-links";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import { sanitizeUserPreferencesForSession } from "@/lib/model-access";
 import {
@@ -17,18 +13,8 @@ import {
   isValidGitHubRepoOwner,
 } from "@/lib/github/repo-identifiers";
 import { getRandomCityName } from "@/lib/random-city";
+import { DEFAULT_SANDBOX_PORTS } from "@/lib/sandbox/config";
 import { getServerSession } from "@/lib/session/get-server-session";
-import {
-  isManagedTemplateTrialUser,
-  MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT,
-  MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR,
-} from "@/lib/managed-template-trial";
-import { listMatchingVercelProjects } from "@/lib/vercel/projects";
-import { getUserVercelToken } from "@/lib/vercel/token";
-import {
-  vercelProjectSelectionSchema,
-  type VercelProjectSelection,
-} from "@/lib/vercel/types";
 
 interface CreateSessionRequest {
   title?: string;
@@ -37,19 +23,18 @@ interface CreateSessionRequest {
   branch?: string;
   cloneUrl?: string;
   isNewBranch?: boolean;
-  sandboxType?: "vercel";
+  sandboxType?: "vercel" | "docker";
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
-  vercelProject?: VercelProjectSelection | null;
 }
 
-function generateBranchName(username: string, name?: string | null): string {
+function generateBranchName(username: string, name?: string): string {
   let initials = "nb";
   if (name) {
     initials =
       name
         .split(" ")
-        .map((n) => n[0]?.toLowerCase() ?? "")
+        .map((part) => part[0]?.toLowerCase() ?? "")
         .join("")
         .slice(0, 2) || "nb";
   } else if (username) {
@@ -79,11 +64,9 @@ function parseNonNegativeInteger(value: string | null): number | null {
   if (value === null) {
     return null;
   }
-
   if (!/^[0-9]+$/.test(value)) {
     return null;
   }
-
   return Number(value);
 }
 
@@ -153,12 +136,9 @@ export async function GET(req: Request) {
 
   if (statusParam === "active") {
     const [sessions, archivedCount] = await Promise.all([
-      getSessionsWithUnreadByUserId(session.user.id, {
-        status: "active",
-      }),
+      getSessionsWithUnreadByUserId(session.user.id, { status: "active" }),
       getArchivedSessionCountByUserId(session.user.id),
     ]);
-
     return Response.json({ sessions, archivedCount });
   }
 
@@ -172,16 +152,6 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  if (isManagedTemplateTrialUser(session, req.url)) {
-    const existingSessionCount = await countSessionsByUserId(session.user.id);
-    if (existingSessionCount >= MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT) {
-      return Response.json(
-        { error: MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR },
-        { status: 403 },
-      );
-    }
-  }
-
   let body: CreateSessionRequest;
   try {
     body = (await req.json()) as CreateSessionRequest;
@@ -189,7 +159,11 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (body.sandboxType && body.sandboxType !== "vercel") {
+  if (
+    body.sandboxType &&
+    body.sandboxType !== "vercel" &&
+    body.sandboxType !== "docker"
+  ) {
     return Response.json({ error: "Invalid sandbox type" }, { status: 400 });
   }
 
@@ -231,21 +205,8 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid repository name" }, { status: 400 });
   }
 
-  let explicitVercelProject: VercelProjectSelection | null | undefined;
-  if (body.vercelProject === null) {
-    explicitVercelProject = null;
-  } else if (body.vercelProject !== undefined) {
-    const parsedProject = vercelProjectSelectionSchema.safeParse(
-      body.vercelProject,
-    );
-    if (!parsedProject.success) {
-      return Response.json(
-        { error: "Invalid Vercel project" },
-        { status: 400 },
-      );
-    }
-    explicitVercelProject = parsedProject.data;
-  }
+  const sandboxBackend =
+    process.env.SANDBOX_BACKEND === "docker" ? "docker" : "vercel";
 
   const {
     repoOwner,
@@ -253,79 +214,39 @@ export async function POST(req: Request) {
     branch,
     cloneUrl,
     isNewBranch,
-    sandboxType = "vercel",
     autoCommitPush,
     autoCreatePr,
   } = body;
 
-  let finalBranch = branch;
-  if (isNewBranch) {
-    finalBranch = generateBranchName(session.user.username, session.user.name);
-  }
+  const initialSandboxState: SandboxState =
+    sandboxBackend === "docker"
+      ? {
+          type: "docker",
+          containerName: `sandbox-${nanoid()}`,
+          volumeName: `volume-${nanoid()}`,
+          ports: DEFAULT_SANDBOX_PORTS,
+          hostPortMap: {},
+        }
+      : { type: "vercel" };
+
+  const finalBranch = isNewBranch
+    ? generateBranchName(session.user.username, session.user.name)
+    : branch;
 
   try {
-    const titlePromise = resolveSessionTitle(body, session.user.id);
-    const preferencesPromise = getUserPreferences(session.user.id);
-
-    let resolvedVercelProject: VercelProjectSelection | null = null;
-    const hasRepo = Boolean(repoOwner && repoName);
-    if (hasRepo && repoOwner && repoName) {
-      if (explicitVercelProject) {
-        const vercelToken = await getUserVercelToken(session.user.id);
-        if (!vercelToken) {
-          return Response.json(
-            { error: "Connect Vercel to select a Vercel project" },
-            { status: 403 },
-          );
-        }
-
-        const matchingProjects = await listMatchingVercelProjects({
-          token: vercelToken,
-          repoOwner,
-          repoName,
-        });
-        const matchedProject =
-          matchingProjects.find(
-            (project) => project.projectId === explicitVercelProject.projectId,
-          ) ?? null;
-        if (!matchedProject) {
-          return Response.json(
-            {
-              error:
-                "Selected Vercel project no longer matches this repository",
-            },
-            { status: 400 },
-          );
-        }
-
-        await upsertVercelProjectLink({
-          userId: session.user.id,
-          repoOwner,
-          repoName,
-          project: matchedProject,
-        });
-        resolvedVercelProject = matchedProject;
-      } else if (explicitVercelProject === undefined) {
-        resolvedVercelProject = await getVercelProjectLinkByRepo(
-          session.user.id,
-          repoOwner,
-          repoName,
-        );
-      }
-    }
-
     const [title, rawPreferences] = await Promise.all([
-      titlePromise,
-      preferencesPromise,
+      resolveSessionTitle(body, session.user.id),
+      getUserPreferences(session.user.id),
     ]);
     const preferences = sanitizeUserPreferencesForSession(
       rawPreferences,
       session,
-      req.url,
+      "",
     );
     const effectiveAutoCommitPush =
       autoCommitPush ?? preferences.autoCommitPush;
     const effectiveAutoCreatePr = autoCreatePr ?? preferences.autoCreatePr;
+
     const result = await createSessionWithInitialChat({
       session: {
         id: nanoid(),
@@ -336,17 +257,17 @@ export async function POST(req: Request) {
         repoName,
         branch: finalBranch,
         cloneUrl,
-        vercelProjectId: resolvedVercelProject?.projectId ?? null,
-        vercelProjectName: resolvedVercelProject?.projectName ?? null,
-        vercelTeamId: resolvedVercelProject?.teamId ?? null,
-        vercelTeamSlug: resolvedVercelProject?.teamSlug ?? null,
+        vercelProjectId: null,
+        vercelProjectName: null,
+        vercelTeamId: null,
+        vercelTeamSlug: null,
         isNewBranch: isNewBranch ?? false,
         autoCommitPushOverride: effectiveAutoCommitPush,
         autoCreatePrOverride: effectiveAutoCommitPush
           ? effectiveAutoCreatePr
           : false,
         globalSkillRefs: preferences.globalSkillRefs,
-        sandboxState: { type: sandboxType },
+        sandboxState: initialSandboxState,
         lifecycleState: "provisioning",
         lifecycleVersion: 0,
       },

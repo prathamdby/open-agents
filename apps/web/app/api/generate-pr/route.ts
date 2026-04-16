@@ -1,7 +1,6 @@
-import { checkBotId } from "botid/server";
-import { botIdConfig } from "@/lib/botid";
 import { connectSandbox } from "@open-harness/sandbox";
-import { gateway, generateText } from "ai";
+import { gateway } from "@open-harness/agent";
+import { generateText } from "ai";
 import {
   ensureForkExists,
   extractGitHubOwnerFromRemoteUrl,
@@ -13,12 +12,11 @@ import {
   redactGitHubToken,
   sleepForForkRetry,
 } from "@/app/api/generate-pr/_lib/generate-pr-helpers";
-import { getGitHubAccount } from "@/lib/db/accounts";
 import { getSessionById, updateSession } from "@/lib/db/sessions";
 import { buildGitHubAuthRemoteUrl } from "@/lib/github/repo-identifiers";
 import { generatePullRequestContentFromSandbox } from "@/lib/git/pr-content";
 import { getUserGitHubToken } from "@/lib/github/user-token";
-import { getAppCoAuthorTrailer } from "@/lib/github/app-auth";
+import { getGatewayConfig } from "@/lib/gateway-config";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
 
@@ -44,11 +42,6 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const botVerification = await checkBotId(botIdConfig);
-  if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
-  }
-
   // 2. Parse request
   let body: GeneratePRRequest;
   try {
@@ -68,6 +61,7 @@ export async function POST(req: Request) {
     commitTitle,
     commitBody,
   } = body;
+  const gatewayConfig = getGatewayConfig();
 
   if (!sessionId) {
     return Response.json({ error: "Session ID is required" }, { status: 400 });
@@ -319,7 +313,9 @@ export async function POST(req: Request) {
       commitMessage = normalizedManualTitle.slice(0, 72);
     } else if (diffForCommit.trim()) {
       const commitMsgResult = await generateText({
-        model: gateway("anthropic/claude-haiku-4.5"),
+        model: gateway("anthropic/claude-haiku-4.5", {
+          config: gatewayConfig,
+        }),
         prompt: `Generate a concise git commit message for these changes. Use conventional commit format (e.g., "feat:", "fix:", "refactor:"). One line only, max 72 characters.
 
 Session context: ${sessionTitle}
@@ -346,26 +342,24 @@ Respond with ONLY the commit message, nothing else.`,
     // Set the git author identity to the authenticated user so the commit is
     // attributed to them. A Co-Authored-By trailer is appended for the GitHub
     // App bot so the agent's involvement is visible in the commit history.
-    const githubAccount = await getGitHubAccount(session.user.id);
-    if (githubAccount?.externalUserId && githubAccount.username) {
-      const userEmail = `${githubAccount.externalUserId}+${githubAccount.username}@users.noreply.github.com`;
-      await sandbox.exec(
-        `git config user.name '${githubAccount.username.replace(/'/g, "'\\''")}'`,
-        cwd,
-        5000,
-      );
-      await sandbox.exec(`git config user.email '${userEmail}'`, cwd, 5000);
-    }
+    const gitUserName = (session.user.name ?? session.user.username).replace(
+      /'/g,
+      "'\\''",
+    );
+    const gitUserEmail =
+      session.user.email ?? `${session.user.username}@users.noreply.github.com`;
+    await sandbox.exec(`git config user.name '${gitUserName}'`, cwd, 5000);
+    await sandbox.exec(
+      `git config user.email '${gitUserEmail.replace(/'/g, "'\\''")}'`,
+      cwd,
+      5000,
+    );
 
     const escapedMessage = commitMessage.replace(/'/g, "'\\''");
-    const coAuthorTrailer = await getAppCoAuthorTrailer();
-    const trailerArg = coAuthorTrailer
-      ? ` -m '${coAuthorTrailer.replace(/'/g, "'\\''")}'`
-      : "";
     const commitCommand =
       useManualCommitMessage && normalizedManualBody.length > 0
-        ? `git commit -m '${escapedMessage}' -m '${normalizedManualBody.replace(/'/g, "'\\''")}'${trailerArg}`
-        : `git commit -m '${escapedMessage}'${trailerArg}`;
+        ? `git commit -m '${escapedMessage}' -m '${normalizedManualBody.replace(/'/g, "'\\''")}'`
+        : `git commit -m '${escapedMessage}'`;
     const commitResult = await sandbox.exec(commitCommand, cwd, 10000);
 
     if (!commitResult.success) {
@@ -468,10 +462,8 @@ Respond with ONLY the commit message, nothing else.`,
         sessionRecord.repoOwner &&
         sessionRecord.repoName
       ) {
-        const githubAccount = await getGitHubAccount(session.user.id);
-
-        if (userToken && githubAccount?.username) {
-          const forkOwner = githubAccount.username;
+        if (userToken && session.user.username) {
+          const forkOwner = session.user.username;
           const forkResult = await ensureForkExists({
             token: userToken,
             upstreamOwner: sessionRecord.repoOwner,

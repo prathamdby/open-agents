@@ -5,6 +5,10 @@ import type { UIMessageChunk } from "ai";
 
 const writtenChunks: UIMessageChunk[] = [];
 let runStatus: string = "running";
+const testGatewayConfig = {
+  baseURL: "https://gateway.test",
+  apiKey: "test-key",
+};
 
 const spies = {
   persistAssistantMessage: mock(() => Promise.resolve()),
@@ -247,6 +251,7 @@ function makeOptions(overrides?: Record<string, unknown>) {
     modelId: "gpt-4",
     agentOptions: {
       sandbox: { state: { type: "vercel" } },
+      gatewayConfig: testGatewayConfig,
     },
     maxSteps: 1,
     ...overrides,
@@ -724,7 +729,7 @@ describe("runAgentWorkflow", () => {
   test("skips sandbox state when no sandbox", async () => {
     await runAgentWorkflow(
       makeOptions({
-        agentOptions: {},
+        agentOptions: { gatewayConfig: testGatewayConfig },
       }),
     );
 

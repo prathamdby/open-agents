@@ -1,24 +1,20 @@
 "use client";
 
 import useSWR from "swr";
-import type { SessionUserInfo } from "@/lib/session/types";
+import type { Session } from "@/lib/session/types";
 import { fetcher } from "@/lib/swr";
 
 export function useSession() {
-  const { data, isLoading } = useSWR<SessionUserInfo>(
-    "/api/auth/info",
-    fetcher,
-    {
-      revalidateOnFocus: true,
-    },
-  );
+  const { data, isLoading } = useSWR<Session>("/api/auth/info", fetcher, {
+    revalidateOnFocus: true,
+  });
 
   return {
-    session: data ?? null,
+    session: data,
     loading: isLoading,
-    isAuthenticated: !!data?.user,
-    hasGitHub: data?.hasGitHub ?? false,
-    hasGitHubAccount: data?.hasGitHubAccount ?? false,
-    hasGitHubInstallations: data?.hasGitHubInstallations ?? false,
+    isAuthenticated: Boolean(data?.user),
+    hasGitHub: Boolean(data?.user),
+    hasGitHubAccount: Boolean(data?.user),
+    hasGitHubInstallations: Boolean(data?.user),
   };
 }

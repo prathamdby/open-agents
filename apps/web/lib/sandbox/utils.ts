@@ -1,21 +1,24 @@
 import type { SandboxState } from "@open-harness/sandbox";
 import { SANDBOX_EXPIRES_BUFFER_MS } from "./config";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function hasNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
 function getSandboxExpiresAt(state: unknown): number | undefined {
-  if (!state || typeof state !== "object") {
+  if (!isRecord(state)) {
     return undefined;
   }
-
-  const expiresAt = (state as { expiresAt?: unknown }).expiresAt;
+  const expiresAt = state.expiresAt;
   return typeof expiresAt === "number" ? expiresAt : undefined;
 }
 
 function getLegacySandboxId(state: unknown): string | null {
-  if (!state || typeof state !== "object") {
+  if (!isRecord(state)) {
     return null;
   }
 
@@ -28,8 +31,18 @@ export function getSessionSandboxName(sessionId: string): string {
 }
 
 export function getPersistentSandboxName(state: unknown): string | null {
-  if (!state || typeof state !== "object") {
+  if (!isRecord(state)) {
     return null;
+  }
+
+  if (state.type === "docker") {
+    const volumeName = state.volumeName;
+    if (hasNonEmptyString(volumeName)) {
+      return volumeName;
+    }
+
+    const containerName = state.containerName;
+    return hasNonEmptyString(containerName) ? containerName : null;
   }
 
   const sandboxName = (state as { sandboxName?: unknown }).sandboxName;
@@ -55,6 +68,10 @@ export function isSandboxActive(
   state: SandboxState | null | undefined,
 ): state is SandboxState {
   if (!state) return false;
+
+  if (state.type === "docker") {
+    return hasRuntimeState(state);
+  }
 
   const expiresAt = getSandboxExpiresAt(state);
   if (expiresAt === undefined) {
@@ -82,7 +99,16 @@ export function canOperateOnSandbox(
  * Check if an unknown value represents sandbox state with live runtime data.
  */
 export function hasRuntimeSandboxState(state: unknown): boolean {
-  if (!state || typeof state !== "object") return false;
+  if (!isRecord(state) || !("type" in state)) return false;
+
+  if (state.type === "docker") {
+    const hostPortMap = state.hostPortMap;
+    return (
+      isRecord(hostPortMap) &&
+      Object.keys(hostPortMap).length > 0 &&
+      hasResumableSandboxState(state)
+    );
+  }
 
   const expiresAt = getSandboxExpiresAt(state);
   if (expiresAt === undefined) {
@@ -116,11 +142,14 @@ export function isSandboxUnavailableError(message: string): boolean {
 }
 
 function hasRuntimeState(state: SandboxState): boolean {
+  if (state.type === "docker") {
+    return hasRuntimeSandboxState(state);
+  }
+
   const expiresAt = getSandboxExpiresAt(state);
   if (expiresAt === undefined) {
     return false;
   }
-
   return hasResumableSandboxState(state);
 }
 
@@ -131,6 +160,16 @@ export function clearSandboxState(
   state: SandboxState | null | undefined,
 ): SandboxState | null {
   if (!state) return null;
+
+  if (state.type === "docker") {
+    return {
+      type: "docker",
+      containerName: state.containerName,
+      volumeName: state.volumeName,
+      ports: state.ports,
+      hostPortMap: {},
+    };
+  }
 
   const sandboxName = getPersistentSandboxName(state);
   const sandboxId = sandboxName ? null : getLegacySandboxId(state);
@@ -150,7 +189,11 @@ export function clearSandboxResumeState(
 ): SandboxState | null {
   if (!state) return null;
 
-  return { type: state.type } as SandboxState;
+  if (state.type === "docker") {
+    return null;
+  }
+
+  return { type: "vercel" };
 }
 
 /**
@@ -161,6 +204,9 @@ export function clearUnavailableSandboxState(
   state: SandboxState | null | undefined,
   message: string,
 ): SandboxState | null {
+  if (state?.type === "docker") {
+    return clearSandboxState(state);
+  }
   return isSandboxNotFoundError(message)
     ? clearSandboxResumeState(state)
     : clearSandboxState(state);

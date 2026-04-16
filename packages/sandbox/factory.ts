@@ -1,5 +1,7 @@
 import type { Sandbox, SandboxHooks } from "./interface";
-import type { SandboxStatus } from "./types";
+import { connectDocker } from "./docker/connect";
+import type { DockerState } from "./docker/state";
+import type { SandboxStatus, Source } from "./types";
 import { connectVercel } from "./vercel/connect";
 import type { VercelState } from "./vercel/state";
 
@@ -10,7 +12,9 @@ export type { SandboxStatus };
  * Unified sandbox state type.
  * Use `type` discriminator to determine which sandbox implementation to use.
  */
-export type SandboxState = { type: "vercel" } & VercelState;
+export type SandboxState =
+  | ({ type: "vercel" } & VercelState)
+  | ({ type: "docker" } & DockerState);
 
 /**
  * Base connect options for all sandbox types.
@@ -38,6 +42,8 @@ export interface ConnectOptions {
   persistent?: boolean;
   /** Default expiration for automatic persistent-sandbox snapshots */
   snapshotExpiration?: number;
+  /** Optional source repository to clone into newly created sandboxes */
+  source?: Source;
   /**
    * Skip git init in an empty workspace (e.g. when refreshing a Vercel base snapshot).
    */
@@ -48,9 +54,27 @@ export interface ConnectOptions {
  * Configuration for connecting to a sandbox.
  */
 export type SandboxConnectConfig = {
-  state: { type: "vercel" } & VercelState;
+  state: SandboxState;
   options?: ConnectOptions;
 };
+
+function assertNever(value: never): never {
+  throw new Error(`Unsupported sandbox type: ${String(value)}`);
+}
+
+function connectByState(
+  state: SandboxState,
+  options?: ConnectOptions,
+): Promise<Sandbox> {
+  switch (state.type) {
+    case "docker":
+      return connectDocker(state, options);
+    case "vercel":
+      return connectVercel(state, options);
+    default:
+      return assertNever(state);
+  }
+}
 
 /**
  * Connect to a sandbox based on the provided configuration.
@@ -67,9 +91,9 @@ export async function connectSandbox(
 
   if (isNewApi) {
     const config = configOrState as SandboxConnectConfig;
-    return connectVercel(config.state, config.options);
+    return connectByState(config.state, config.options);
   }
 
   const state = configOrState as SandboxState;
-  return connectVercel(state, legacyOptions);
+  return connectByState(state, legacyOptions);
 }

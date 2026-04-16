@@ -1,5 +1,6 @@
+import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
 import {
-  createGateway,
   defaultSettingsMiddleware,
   gateway as aiGateway,
   wrapLanguageModel,
@@ -7,8 +8,10 @@ import {
   type JSONValue,
   type LanguageModel,
 } from "ai";
-import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
-import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
+import {
+  createOpenAI,
+  type OpenAIResponsesProviderOptions,
+} from "@ai-sdk/openai";
 
 function supportsAdaptiveAnthropicThinking(modelId: string): boolean {
   return modelId.includes("4.6") || modelId.includes("4.7");
@@ -168,18 +171,29 @@ export function getProviderOptionsForModel(
   return providerOptions;
 }
 
+function normalizeOpenAiCompatibleBaseUrl(baseURL: string): string {
+  return baseURL.replace(/\/+$/, "");
+}
+
 export function gateway(
   modelId: GatewayModelId,
   options: GatewayOptions = {},
 ): LanguageModel {
   const { config, providerOptionsOverrides } = options;
 
-  // Use custom gateway config or default AI SDK gateway
-  const baseGateway = config
-    ? createGateway({ baseURL: config.baseURL, apiKey: config.apiKey })
-    : aiGateway;
+  let model: LanguageModelV3;
 
-  let model: LanguageModel = baseGateway(modelId);
+  if (config) {
+    const openai = createOpenAI({
+      baseURL: normalizeOpenAiCompatibleBaseUrl(config.baseURL),
+      apiKey: config.apiKey,
+    });
+    // createOpenAI()(id) targets the Responses API; self-hosted gateways are
+    // OpenAI-compatible Chat Completions (e.g. POST .../v1/chat/completions).
+    model = openai.chat(modelId);
+  } else {
+    model = aiGateway(modelId) as LanguageModelV3;
+  }
 
   const providerOptions = getProviderOptionsForModel(
     modelId,
@@ -195,5 +209,5 @@ export function gateway(
     });
   }
 
-  return model;
+  return model as LanguageModel;
 }

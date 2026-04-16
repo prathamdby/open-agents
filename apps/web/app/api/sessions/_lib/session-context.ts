@@ -63,18 +63,18 @@ function toErrorResponse(message: string, status: number): Response {
 }
 
 export async function requireAuthenticatedUser(): Promise<AuthenticatedUserResult> {
-  const session = await getServerSession();
-  if (!session?.user) {
+  try {
+    const session = await getServerSession();
+    return {
+      ok: true,
+      userId: session.user.id,
+    };
+  } catch {
     return {
       ok: false,
-      response: toErrorResponse("Not authenticated", 401),
+      response: toErrorResponse("GITHUB_PAT is not configured", 401),
     };
   }
-
-  return {
-    ok: true,
-    userId: session.user.id,
-  };
 }
 
 export async function requireOwnedSession(

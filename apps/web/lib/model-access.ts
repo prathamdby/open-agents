@@ -1,6 +1,5 @@
 import type { UserPreferencesData } from "@/lib/db/user-preferences";
-import { isManagedTemplateTrialUser } from "@/lib/managed-template-trial";
-import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
+import { getDefaultModelId } from "@/lib/models";
 import {
   getAllVariants,
   MODEL_VARIANT_ID_PREFIX,
@@ -8,85 +7,50 @@ import {
 } from "@/lib/model-variants";
 import type { Session } from "@/lib/session/types";
 
-const RESTRICTED_MODEL_PREFIXES = ["anthropic/claude-opus-"];
+type SessionLike = Session | null | undefined;
 
 export const MANAGED_TEMPLATE_TRIAL_MODEL_ACCESS_ERROR =
-  "This hosted deployment does not allow Claude Opus models for non-Vercel trial accounts. Deploy your own copy for full model access.";
-
-type SessionLike = Pick<Session, "authProvider" | "user"> | null | undefined;
-
-function hasManagedTemplateModelRestrictions(
-  session: SessionLike,
-  url: string | URL,
-): boolean {
-  return isManagedTemplateTrialUser(session, url);
-}
+  "Selected model is not available for this session.";
 
 export function isRestrictedModelIdForSession(
-  modelId: string,
-  session: SessionLike,
-  url: string | URL,
+  _modelId: string,
+  _session: SessionLike,
+  _url: string | URL,
 ): boolean {
-  if (!hasManagedTemplateModelRestrictions(session, url)) {
-    return false;
-  }
-
-  return RESTRICTED_MODEL_PREFIXES.some((prefix) => modelId.startsWith(prefix));
+  return false;
 }
 
 export function filterModelsForSession<T extends { id: string }>(
   models: T[],
-  session: SessionLike,
-  url: string | URL,
+  _session: SessionLike,
+  _url: string | URL,
 ): T[] {
-  if (!hasManagedTemplateModelRestrictions(session, url)) {
-    return models;
-  }
-
-  return models.filter(
-    (model) =>
-      !RESTRICTED_MODEL_PREFIXES.some((prefix) => model.id.startsWith(prefix)),
-  );
+  return models;
 }
 
 export function filterModelVariantsForSession(
   modelVariants: ModelVariant[],
-  session: SessionLike,
-  url: string | URL,
+  _session: SessionLike,
+  _url: string | URL,
 ): ModelVariant[] {
-  if (!hasManagedTemplateModelRestrictions(session, url)) {
-    return modelVariants;
-  }
-
-  return modelVariants.filter(
-    (variant) =>
-      !RESTRICTED_MODEL_PREFIXES.some((prefix) =>
-        variant.baseModelId.startsWith(prefix),
-      ),
-  );
+  return modelVariants;
 }
 
 export function sanitizeSelectedModelIdForSession(
   modelId: string | null | undefined,
   modelVariants: ModelVariant[],
-  session: SessionLike,
-  url: string | URL,
+  _session: SessionLike,
+  _url: string | URL,
 ): string | null | undefined {
-  if (!modelId || !hasManagedTemplateModelRestrictions(session, url)) {
+  if (!modelId) {
     return modelId;
-  }
-
-  if (RESTRICTED_MODEL_PREFIXES.some((prefix) => modelId.startsWith(prefix))) {
-    return APP_DEFAULT_MODEL_ID;
   }
 
   if (
     modelId.startsWith(MODEL_VARIANT_ID_PREFIX) &&
-    !filterModelVariantsForSession(modelVariants, session, url).some(
-      (variant) => variant.id === modelId,
-    )
+    !modelVariants.some((variant) => variant.id === modelId)
   ) {
-    return APP_DEFAULT_MODEL_ID;
+    return getDefaultModelId();
   }
 
   return modelId;
@@ -94,23 +58,11 @@ export function sanitizeSelectedModelIdForSession(
 
 export function sanitizeUserPreferencesForSession(
   preferences: UserPreferencesData,
-  session: SessionLike,
-  url: string | URL,
+  _session: SessionLike,
+  _url: string | URL,
 ): UserPreferencesData {
-  if (!hasManagedTemplateModelRestrictions(session, url)) {
-    return preferences;
-  }
-
-  const filteredModelVariants = filterModelVariantsForSession(
-    preferences.modelVariants,
-    session,
-    url,
-  );
-  const availableModelVariants = filterModelVariantsForSession(
-    getAllVariants(filteredModelVariants),
-    session,
-    url,
-  );
+  const availableModelVariants = getAllVariants(preferences.modelVariants);
+  const defaultModelId = getDefaultModelId();
 
   return {
     ...preferences,
@@ -118,19 +70,17 @@ export function sanitizeUserPreferencesForSession(
       sanitizeSelectedModelIdForSession(
         preferences.defaultModelId,
         availableModelVariants,
-        session,
-        url,
-      ) ?? APP_DEFAULT_MODEL_ID,
+        null,
+        "",
+      ) ?? defaultModelId,
     defaultSubagentModelId:
       sanitizeSelectedModelIdForSession(
         preferences.defaultSubagentModelId,
         availableModelVariants,
-        session,
-        url,
+        null,
+        "",
       ) ?? null,
-    modelVariants: filteredModelVariants,
-    enabledModelIds: preferences.enabledModelIds.filter(
-      (modelId) => !isRestrictedModelIdForSession(modelId, session, url),
-    ),
+    modelVariants: preferences.modelVariants,
+    enabledModelIds: preferences.enabledModelIds,
   };
 }

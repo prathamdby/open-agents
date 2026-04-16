@@ -4,9 +4,9 @@ import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getConversationContext } from "@/app/api/generate-pr/_lib/generate-pr-helpers";
-import { getGitHubAccount } from "@/lib/db/accounts";
 import { db } from "@/lib/db/client";
 import { getChatsBySessionId, getSessionById } from "@/lib/db/sessions";
+import { getGatewayConfig } from "@/lib/gateway-config";
 import { users } from "@/lib/db/schema";
 
 const prContentSchema = z.object({
@@ -92,22 +92,15 @@ export async function resolvePullRequestContextSection(params: {
   }
 
   if (sessionRecord) {
-    const [userRecord, githubAccount] = await Promise.all([
-      db.query.users.findFirst({
-        where: eq(users.id, sessionRecord.userId),
-        columns: {
-          name: true,
-          username: true,
-        },
-      }),
-      getGitHubAccount(sessionRecord.userId),
-    ]);
-    const githubUsername = githubAccount?.username?.trim() || null;
-    const displayName =
-      userRecord?.name?.trim() ||
-      githubUsername ||
-      userRecord?.username?.trim() ||
-      null;
+    const userRecord = await db.query.users.findFirst({
+      where: eq(users.id, sessionRecord.userId),
+      columns: {
+        name: true,
+        username: true,
+      },
+    });
+    const githubUsername = userRecord?.username?.trim() || null;
+    const displayName = userRecord?.name?.trim() || githubUsername || null;
 
     if (displayName) {
       const escapedDisplayName = escapeMarkdownText(displayName);
@@ -302,7 +295,9 @@ export async function generatePullRequestContentFromSandbox(
   let prContent: z.infer<typeof prContentSchema>;
   try {
     const { output } = await generateText({
-      model: gateway("anthropic/claude-haiku-4.5"),
+      model: gateway("anthropic/claude-haiku-4.5", {
+        config: getGatewayConfig(),
+      }),
       output: Output.object({
         schema: prContentSchema,
       }),

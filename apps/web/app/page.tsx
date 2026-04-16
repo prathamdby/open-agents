@@ -1,17 +1,16 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { SESSION_COOKIE_NAME } from "@/lib/session/constants";
-import { getServerSession } from "@/lib/session/get-server-session";
-import { HomePage } from "./home-page";
+import { getGitHubPat } from "@/lib/github/pat";
 
-export default async function Home() {
-  const session = await getServerSession();
-  if (session?.user) {
+export default function Home() {
+  const hasPat = Boolean(process.env.GITHUB_PAT);
+  if (hasPat) {
+    getGitHubPat();
     redirect("/sessions");
   }
 
-  const store = await cookies();
-  const hasSessionCookie = Boolean(store.get(SESSION_COOKIE_NAME)?.value);
-
-  return <HomePage hasSessionCookie={hasSessionCookie} lastRepo={null} />;
+  return (
+    <main className="flex min-h-screen items-center justify-center p-6 text-sm text-muted-foreground">
+      Set GITHUB_PAT in apps/web/.env and restart the app.
+    </main>
+  );
 }

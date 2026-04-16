@@ -3,6 +3,7 @@ import { stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import { z } from "zod";
 import { addCacheControl } from "./context-management";
 import {
+  type GatewayConfig,
   type GatewayModelId,
   gateway,
   type ProviderOptionsByProvider,
@@ -40,6 +41,7 @@ export interface AgentSandboxContext {
 
 const callOptionsSchema = z.object({
   sandbox: z.custom<AgentSandboxContext>(),
+  gatewayConfig: z.custom<GatewayConfig>(),
   model: z.custom<OpenHarnessAgentModelInput>().optional(),
   subagentModel: z.custom<OpenHarnessAgentModelInput>().optional(),
   customInstructions: z.string().optional(),
@@ -102,12 +104,15 @@ export const openHarnessAgent = new ToolLoopAgent({
     const subagentSelection = options.subagentModel
       ? normalizeAgentModelSelection(options.subagentModel, defaultModelLabel)
       : undefined;
+    const gatewayConfig = options.gatewayConfig;
 
     const callModel = gateway(mainSelection.id, {
+      config: gatewayConfig,
       providerOptionsOverrides: mainSelection.providerOptionsOverrides,
     });
     const subagentModel = subagentSelection
       ? gateway(subagentSelection.id, {
+          config: gatewayConfig,
           providerOptionsOverrides: subagentSelection.providerOptionsOverrides,
         })
       : undefined;

@@ -12,7 +12,10 @@
     "./vercel/index.js": "./vercel/index.ts",
     "./vercel/snapshot-refresh.js": "./vercel/snapshot-refresh.ts",
     "./vercel/sandbox.js": "./vercel/sandbox.ts",
-    "./vercel/config.js": "./vercel/config.ts"
+    "./vercel/config.js": "./vercel/config.ts",
+    "./docker": "./docker/index.ts",
+    "./docker/index.js": "./docker/index.ts",
+    "./docker/sandbox.js": "./docker/sandbox.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

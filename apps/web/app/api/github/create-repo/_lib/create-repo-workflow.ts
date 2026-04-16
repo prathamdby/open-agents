@@ -1,8 +1,8 @@
 import type { Sandbox } from "@open-harness/sandbox";
-import { gateway, generateText } from "ai";
-import { getGitHubAccount } from "@/lib/db/accounts";
-import { getAppCoAuthorTrailer } from "@/lib/github/app-auth";
+import { gateway } from "@open-harness/agent";
+import { generateText } from "ai";
 import { createRepository } from "@/lib/github/client";
+import { getGatewayConfig } from "@/lib/gateway-config";
 
 // Escape shell metacharacters to prevent command injection
 const escapeShellArg = (arg: string) => `'${arg.replace(/'/g, "'\\''")}'`;
@@ -123,17 +123,9 @@ export async function runCreateRepoWorkflow({
   }
 
   // 9. Configure git user (in case not already configured)
-  const githubAccount = await getGitHubAccount(sessionUser.id);
-  const githubNoreplyEmail =
-    githubAccount?.externalUserId && githubAccount.username
-      ? `${githubAccount.externalUserId}+${githubAccount.username}@users.noreply.github.com`
-      : undefined;
-  const userName =
-    sessionUser.name ?? githubAccount?.username ?? sessionUser.username;
+  const userName = sessionUser.name ?? sessionUser.username;
   const userEmail =
-    githubNoreplyEmail ??
-    sessionUser.email ??
-    `${sessionUser.username}@users.noreply.github.com`;
+    sessionUser.email ?? `${sessionUser.username}@users.noreply.github.com`;
 
   await sandbox.exec(
     `git config user.name ${escapeShellArg(userName)}`,
@@ -197,7 +189,9 @@ export async function runCreateRepoWorkflow({
 
   try {
     const commitMsgResult = await generateText({
-      model: gateway("anthropic/claude-haiku-4.5"),
+      model: gateway("anthropic/claude-haiku-4.5", {
+        config: getGatewayConfig(),
+      }),
       prompt: `Generate a concise git commit message for an initial commit of a new project. Use conventional commit format. One line only, max 72 characters.
 
 Session context: ${sanitizedSessionTitle}
@@ -213,14 +207,10 @@ Respond with ONLY the commit message, nothing else.`,
     commitMessage = "feat: initial commit";
   }
 
-  // 13. Create commit with Co-Authored-By trailer for the agent app
+  // 13. Create commit
   const escapedMessage = commitMessage.replace(/'/g, "'\\''");
-  const coAuthorTrailer = await getAppCoAuthorTrailer();
-  const trailerArg = coAuthorTrailer
-    ? ` -m '${coAuthorTrailer.replace(/'/g, "'\\''")}'`
-    : "";
   const commitResult = await sandbox.exec(
-    `git commit -m '${escapedMessage}'${trailerArg}`,
+    `git commit -m '${escapedMessage}'`,
     cwd,
     10000,
   );

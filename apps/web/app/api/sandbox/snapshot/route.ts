@@ -133,13 +133,87 @@ export async function PUT(req: Request) {
   }
 
   const { sessionRecord } = sessionContext;
-  const sandboxType = sessionRecord.sandboxState?.type ?? "vercel";
+  const sandboxState = sessionRecord.sandboxState;
+  const sandboxType = sandboxState?.type ?? "vercel";
+
+  if (sandboxType === "docker") {
+    if (!sandboxState || sandboxState.type !== "docker") {
+      return Response.json(
+        { error: "No sandbox available for resume" },
+        { status: 404 },
+      );
+    }
+
+    if (hasRuntimeSandboxState(sandboxState)) {
+      const restoredFrom = getResumableSandboxName(sandboxState) ?? undefined;
+      console.log(
+        `[Snapshot Restore] session=${sessionId} already_running=true sandboxType=${sandboxType}`,
+      );
+      return Response.json({
+        success: true,
+        alreadyRunning: true,
+        restoredFrom,
+      });
+    }
+
+    const restoredFrom = getResumableSandboxName(sandboxState);
+    if (!restoredFrom) {
+      return Response.json(
+        { error: "No sandbox available for resume" },
+        { status: 404 },
+      );
+    }
+
+    try {
+      const sandbox = await connectSandbox(sandboxState, {
+        timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
+        ports:
+          sandboxState.ports.length > 0
+            ? sandboxState.ports
+            : DEFAULT_SANDBOX_PORTS,
+        resume: true,
+      });
+      const restoredState = (sandbox.getState?.() ??
+        sandboxState) as Parameters<typeof updateSession>[1]["sandboxState"];
+
+      await updateSession(sessionId, {
+        sandboxState: restoredState,
+        snapshotUrl: null,
+        snapshotCreatedAt: null,
+        lifecycleVersion: getNextLifecycleVersion(
+          sessionRecord.lifecycleVersion,
+        ),
+        ...buildActiveLifecycleUpdate(restoredState),
+      });
+
+      kickSandboxLifecycleWorkflow({
+        sessionId,
+        reason: "snapshot-restored",
+      });
+
+      console.log(
+        `[Snapshot Restore] session=${sessionId} success=true sandboxType=${sandboxType} sandboxName=${restoredFrom} restoredFrom=${restoredFrom}`,
+      );
+      return Response.json({
+        success: true,
+        restoredFrom,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[Snapshot Restore] session=${sessionId} success=false error=${message}`,
+      );
+      return Response.json(
+        { error: `Failed to restore snapshot: ${message}` },
+        { status: 500 },
+      );
+    }
+  }
 
   if (sandboxType !== "vercel") {
     return Response.json(
       {
-        error:
-          "Snapshot restoration is only supported for the current cloud sandbox provider",
+        error: `Snapshot restoration is not supported for sandbox type: ${sandboxType}`,
       },
       { status: 400 },
     );

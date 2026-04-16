@@ -1,8 +1,8 @@
-import { checkBotId } from "botid/server";
-import { botIdConfig } from "@/lib/botid";
 import { connectSandbox } from "@open-harness/sandbox";
-import { gateway, generateText } from "ai";
+import { gateway } from "@open-harness/agent";
+import { generateText } from "ai";
 import { getSessionById } from "@/lib/db/sessions";
+import { getGatewayConfig } from "@/lib/gateway-config";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
 
@@ -17,11 +17,6 @@ export async function POST(
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const botVerification = await checkBotId(botIdConfig);
-  if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
-  }
-
   const { sessionId } = await params;
   const dbSession = await getSessionById(sessionId);
   if (!dbSession || dbSession.userId !== session.user.id) {
@@ -34,6 +29,7 @@ export async function POST(
 
   const sandbox = await connectSandbox(dbSession.sandboxState);
   const cwd = sandbox.workingDirectory;
+  const gatewayConfig = getGatewayConfig();
 
   // Get the diff for commit message generation
   const diffResult = await sandbox.exec(
@@ -48,7 +44,9 @@ export async function POST(
   }
 
   const result = await generateText({
-    model: gateway("anthropic/claude-haiku-4.5"),
+    model: gateway("anthropic/claude-haiku-4.5", {
+      config: gatewayConfig,
+    }),
     prompt: `Generate a concise git commit message for these changes. Use conventional commit format (e.g., "feat:", "fix:", "refactor:"). One line only, max 72 characters.
 
 Session context: ${dbSession.title}

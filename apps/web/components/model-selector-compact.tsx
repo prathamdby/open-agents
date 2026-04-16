@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckIcon, ChevronDown } from "lucide-react";
 import { type ModelOption } from "@/lib/model-options";
-import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import {
   Popover,
@@ -162,11 +161,6 @@ export function ModelSelectorCompact({
                       {option.description ?? option.id}
                     </p>
                   </div>
-                  {option.id === APP_DEFAULT_MODEL_ID && (
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      default
-                    </span>
-                  )}
                 </CommandItem>
               ))}
             </CommandGroup>

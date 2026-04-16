@@ -1,9 +1,8 @@
 import type { Sandbox } from "@open-harness/sandbox";
 import { generateText } from "ai";
 import { gateway } from "@open-harness/agent";
-import { getGitHubAccount } from "@/lib/db/accounts";
+import { getGatewayConfig } from "@/lib/gateway-config";
 import { buildGitHubAuthRemoteUrl } from "@/lib/github/repo-identifiers";
-import { getAppCoAuthorTrailer } from "@/lib/github/app-auth";
 import { getUserGitHubToken } from "@/lib/github/user-token";
 
 export interface AutoCommitParams {
@@ -67,26 +66,10 @@ export async function performAutoCommit(
   // 4. Generate commit message
   const commitMessage = await generateCommitMessage(sandbox, cwd, sessionTitle);
 
-  // 5. Set git author identity
-  const githubAccount = await getGitHubAccount(userId);
-  if (githubAccount?.externalUserId && githubAccount.username) {
-    const userEmail = `${githubAccount.externalUserId}+${githubAccount.username}@users.noreply.github.com`;
-    await sandbox.exec(
-      `git config user.name '${githubAccount.username.replace(/'/g, "'\\''")}'`,
-      cwd,
-      5000,
-    );
-    await sandbox.exec(`git config user.email '${userEmail}'`, cwd, 5000);
-  }
-
-  // 6. Commit with Co-Authored-By trailer for the agent app
+  // 5. Commit
   const escapedMessage = commitMessage.replace(/'/g, "'\\''");
-  const coAuthorTrailer = await getAppCoAuthorTrailer();
-  const trailerArg = coAuthorTrailer
-    ? ` -m '${coAuthorTrailer.replace(/'/g, "'\\''")}'`
-    : "";
   const commitResult = await sandbox.exec(
-    `git commit -m '${escapedMessage}'${trailerArg}`,
+    `git commit -m '${escapedMessage}'`,
     cwd,
     10000,
   );
@@ -102,7 +85,7 @@ export async function performAutoCommit(
   const headResult = await sandbox.exec("git rev-parse HEAD", cwd, 5000);
   const commitSha = headResult.stdout.trim() || undefined;
 
-  // 7. Push
+  // 6. Push
   const branchResult = await sandbox.exec(
     "git symbolic-ref --short HEAD",
     cwd,
@@ -159,7 +142,9 @@ async function generateCommitMessage(
     }
 
     const result = await generateText({
-      model: gateway("anthropic/claude-haiku-4.5"),
+      model: gateway("anthropic/claude-haiku-4.5", {
+        config: getGatewayConfig(),
+      }),
       prompt: `Generate a concise git commit message for these changes. Use conventional commit format (e.g., "feat:", "fix:", "refactor:"). One line only, max 72 characters.
 
 Session context: ${sessionTitle}

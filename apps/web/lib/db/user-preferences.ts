@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
 import { modelVariantsSchema, type ModelVariant } from "@/lib/model-variants";
-import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
+import { getDefaultModelId } from "@/lib/models";
 import {
   normalizeGlobalSkillRefs,
   type GlobalSkillRef,
@@ -27,25 +27,28 @@ export interface UserPreferencesData {
   enabledModelIds: string[];
 }
 
-const DEFAULT_PREFERENCES: UserPreferencesData = {
-  defaultModelId: APP_DEFAULT_MODEL_ID,
-  defaultSubagentModelId: null,
-  defaultSandboxType: "vercel",
-  defaultDiffMode: "unified",
-  autoCommitPush: false,
-  autoCreatePr: false,
-  alertsEnabled: true,
-  alertSoundEnabled: true,
-  publicUsageEnabled: false,
-  globalSkillRefs: [],
-  modelVariants: [],
-  enabledModelIds: [],
-};
+function getDefaultPreferences(): UserPreferencesData {
+  return {
+    defaultModelId: getDefaultModelId(),
+    defaultSubagentModelId: null,
+    defaultSandboxType: "vercel",
+    defaultDiffMode: "unified",
+    autoCommitPush: false,
+    autoCreatePr: false,
+    alertsEnabled: true,
+    alertSoundEnabled: true,
+    publicUsageEnabled: false,
+    globalSkillRefs: [],
+    modelVariants: [],
+    enabledModelIds: [],
+  };
+}
 
 const VALID_SANDBOX_TYPES: SandboxType[] = ["vercel"];
 const VALID_DIFF_MODES: DiffMode[] = ["unified", "split"];
 
 function normalizeSandboxType(value: unknown): SandboxType {
+  const defaultPreferences = getDefaultPreferences();
   if (value === "hybrid") {
     return "vercel";
   }
@@ -57,10 +60,11 @@ function normalizeSandboxType(value: unknown): SandboxType {
     return value as SandboxType;
   }
 
-  return DEFAULT_PREFERENCES.defaultSandboxType;
+  return defaultPreferences.defaultSandboxType;
 }
 
 function normalizeDiffMode(value: unknown): DiffMode {
+  const defaultPreferences = getDefaultPreferences();
   if (
     typeof value === "string" &&
     VALID_DIFF_MODES.includes(value as DiffMode)
@@ -68,7 +72,7 @@ function normalizeDiffMode(value: unknown): DiffMode {
     return value as DiffMode;
   }
 
-  return DEFAULT_PREFERENCES.defaultDiffMode;
+  return defaultPreferences.defaultDiffMode;
 }
 
 function normalizeEnabledModelIds(value: unknown): string[] {
@@ -95,22 +99,23 @@ export function toUserPreferencesData(
     | "enabledModelIds"
   >,
 ): UserPreferencesData {
+  const defaultPreferences = getDefaultPreferences();
   const parsedModelVariants = modelVariantsSchema.safeParse(
     row?.modelVariants ?? [],
   );
 
   return {
-    defaultModelId: row?.defaultModelId ?? DEFAULT_PREFERENCES.defaultModelId,
+    defaultModelId: row?.defaultModelId ?? defaultPreferences.defaultModelId,
     defaultSubagentModelId: row?.defaultSubagentModelId ?? null,
     defaultSandboxType: normalizeSandboxType(row?.defaultSandboxType),
     defaultDiffMode: normalizeDiffMode(row?.defaultDiffMode),
-    autoCommitPush: row?.autoCommitPush ?? DEFAULT_PREFERENCES.autoCommitPush,
-    autoCreatePr: row?.autoCreatePr ?? DEFAULT_PREFERENCES.autoCreatePr,
-    alertsEnabled: row?.alertsEnabled ?? DEFAULT_PREFERENCES.alertsEnabled,
+    autoCommitPush: row?.autoCommitPush ?? defaultPreferences.autoCommitPush,
+    autoCreatePr: row?.autoCreatePr ?? defaultPreferences.autoCreatePr,
+    alertsEnabled: row?.alertsEnabled ?? defaultPreferences.alertsEnabled,
     alertSoundEnabled:
-      row?.alertSoundEnabled ?? DEFAULT_PREFERENCES.alertSoundEnabled,
+      row?.alertSoundEnabled ?? defaultPreferences.alertSoundEnabled,
     publicUsageEnabled:
-      row?.publicUsageEnabled ?? DEFAULT_PREFERENCES.publicUsageEnabled,
+      row?.publicUsageEnabled ?? defaultPreferences.publicUsageEnabled,
     globalSkillRefs: normalizeGlobalSkillRefs(row?.globalSkillRefs),
     modelVariants: parsedModelVariants.success ? parsedModelVariants.data : [],
     enabledModelIds: normalizeEnabledModelIds(row?.enabledModelIds),
@@ -139,6 +144,7 @@ export async function updateUserPreferences(
   userId: string,
   updates: Partial<UserPreferencesData>,
 ): Promise<UserPreferencesData> {
+  const defaultPreferences = getDefaultPreferences();
   const [existing] = await db
     .select()
     .from(userPreferences)
@@ -165,25 +171,25 @@ export async function updateUserPreferences(
       id: nanoid(),
       userId,
       defaultModelId:
-        updates.defaultModelId ?? DEFAULT_PREFERENCES.defaultModelId,
+        updates.defaultModelId ?? defaultPreferences.defaultModelId,
       defaultSubagentModelId: updates.defaultSubagentModelId ?? null,
       defaultSandboxType:
-        updates.defaultSandboxType ?? DEFAULT_PREFERENCES.defaultSandboxType,
+        updates.defaultSandboxType ?? defaultPreferences.defaultSandboxType,
       defaultDiffMode:
-        updates.defaultDiffMode ?? DEFAULT_PREFERENCES.defaultDiffMode,
+        updates.defaultDiffMode ?? defaultPreferences.defaultDiffMode,
       autoCommitPush:
-        updates.autoCommitPush ?? DEFAULT_PREFERENCES.autoCommitPush,
-      autoCreatePr: updates.autoCreatePr ?? DEFAULT_PREFERENCES.autoCreatePr,
-      alertsEnabled: updates.alertsEnabled ?? DEFAULT_PREFERENCES.alertsEnabled,
+        updates.autoCommitPush ?? defaultPreferences.autoCommitPush,
+      autoCreatePr: updates.autoCreatePr ?? defaultPreferences.autoCreatePr,
+      alertsEnabled: updates.alertsEnabled ?? defaultPreferences.alertsEnabled,
       alertSoundEnabled:
-        updates.alertSoundEnabled ?? DEFAULT_PREFERENCES.alertSoundEnabled,
+        updates.alertSoundEnabled ?? defaultPreferences.alertSoundEnabled,
       publicUsageEnabled:
-        updates.publicUsageEnabled ?? DEFAULT_PREFERENCES.publicUsageEnabled,
+        updates.publicUsageEnabled ?? defaultPreferences.publicUsageEnabled,
       globalSkillRefs:
-        updates.globalSkillRefs ?? DEFAULT_PREFERENCES.globalSkillRefs,
-      modelVariants: updates.modelVariants ?? DEFAULT_PREFERENCES.modelVariants,
+        updates.globalSkillRefs ?? defaultPreferences.globalSkillRefs,
+      modelVariants: updates.modelVariants ?? defaultPreferences.modelVariants,
       enabledModelIds:
-        updates.enabledModelIds ?? DEFAULT_PREFERENCES.enabledModelIds,
+        updates.enabledModelIds ?? defaultPreferences.enabledModelIds,
     })
     .returning();
 

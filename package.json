@@ -18,6 +18,8 @@
     "web": "cd apps/web/ && bun run dev",
     "dev": "turbo dev",
     "build": "turbo build",
+    "start": "bun run --cwd apps/web start",
+    "start:worker": "bun run --cwd apps/web start:worker",
     "sandbox:snapshot-base": "bun run scripts/vercel-refresh-base-snapshot.ts",
     "typecheck": "turbo typecheck",
     "check": "ultracite check",

@@ -4,8 +4,10 @@ import {
 } from "@/app/api/sessions/_lib/session-context";
 import type { PullRequestCheckRun } from "@/lib/github/client";
 import { getUserGitHubToken } from "@/lib/github/user-token";
+import { getGatewayConfig } from "@/lib/gateway-config";
 import { Octokit } from "@octokit/rest";
-import { gateway, generateText } from "ai";
+import { gateway } from "@open-harness/agent";
+import { generateText } from "ai";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -159,7 +161,9 @@ async function compactLog(rawLog: string): Promise<string> {
   }
 
   const result = await generateText({
-    model: gateway("anthropic/claude-haiku-4.5"),
+    model: gateway("anthropic/claude-haiku-4.5", {
+      config: getGatewayConfig(),
+    }),
     system: LOG_SUMMARIZATION_PROMPT,
     prompt: logInput,
   });

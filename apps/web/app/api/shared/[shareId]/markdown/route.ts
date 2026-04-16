@@ -5,11 +5,28 @@ import {
   getSessionByIdCached,
   getShareByIdCached,
 } from "@/lib/db/sessions-cache";
-import { redactSharedEnvContent } from "../../../../shared/[shareId]/redact-shared-env-content";
-import { formatElapsed } from "../../../../shared/[shareId]/shared-chat-status-utils";
 
 interface RouteContext {
   params: Promise<{ shareId: string }>;
+}
+
+function redactSharedEnvContent(message: WebAgentUIMessage): WebAgentUIMessage {
+  return message;
+}
+
+function formatElapsed(durationMs: number): string {
+  if (durationMs < 1_000) {
+    return `${durationMs}ms`;
+  }
+  const seconds = durationMs / 1_000;
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${minutes}:${remainingSeconds}`;
 }
 
 type MarkdownMessage = {

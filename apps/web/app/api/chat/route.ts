@@ -1,14 +1,10 @@
-import { checkBotId } from "botid/server";
 import { createUIMessageStreamResponse, type InferUIMessageChunk } from "ai";
-import { botIdConfig } from "@/lib/botid";
 import { start } from "workflow/api";
 import type { WebAgentUIMessage } from "@/app/types";
 import {
   compareAndSetChatActiveStreamId,
-  countUserMessagesByUserId,
   createChatMessageIfNotExists,
   getChatById,
-  getChatMessageById,
   isFirstChatMessage,
   touchChat,
   updateChat,
@@ -23,12 +19,8 @@ import {
 import { getAllVariants } from "@/lib/model-variants";
 import { createCancelableReadableStream } from "@/lib/chat/create-cancelable-readable-stream";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
+import { getGatewayConfig } from "@/lib/gateway-config";
 import { getServerSession } from "@/lib/session/get-server-session";
-import {
-  isManagedTemplateTrialUser,
-  MANAGED_TEMPLATE_TRIAL_MESSAGE_LIMIT,
-  MANAGED_TEMPLATE_TRIAL_MESSAGE_LIMIT_ERROR,
-} from "@/lib/managed-template-trial";
 import { buildActiveLifecycleUpdate } from "@/lib/sandbox/lifecycle";
 import {
   requireAuthenticatedUser,
@@ -44,17 +36,6 @@ export const maxDuration = 800;
 
 type WebAgentUIMessageChunk = InferUIMessageChunk<WebAgentUIMessage>;
 
-function getLatestUserMessage(messages: WebAgentUIMessage[]) {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role === "user") {
-      return message;
-    }
-  }
-
-  return null;
-}
-
 export async function POST(req: Request) {
   // 1. Validate session
   const authResult = await requireAuthenticatedUser();
@@ -63,11 +44,6 @@ export async function POST(req: Request) {
   }
   const userId = authResult.userId;
   const session = await getServerSession();
-
-  const botVerification = await checkBotId(botIdConfig);
-  if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
-  }
 
   const parsedBody = await parseChatRequestBody(req);
   if (!parsedBody.ok) {
@@ -100,22 +76,6 @@ export async function POST(req: Request) {
   const activeSandboxState = sessionRecord.sandboxState;
   if (!activeSandboxState) {
     throw new Error("Sandbox not initialized");
-  }
-
-  if (isManagedTemplateTrialUser(session, req.url)) {
-    const latestUserMessage = getLatestUserMessage(messages);
-    if (latestUserMessage) {
-      const existingMessage = await getChatMessageById(latestUserMessage.id);
-      if (!existingMessage) {
-        const userMessageCount = await countUserMessagesByUserId(userId);
-        if (userMessageCount >= MANAGED_TEMPLATE_TRIAL_MESSAGE_LIMIT) {
-          return Response.json(
-            { error: MANAGED_TEMPLATE_TRIAL_MESSAGE_LIMIT_ERROR },
-            { status: 403 },
-          );
-        }
-      }
-    }
   }
 
   // Guard: if a workflow is already running for this chat, reconnect to it
@@ -238,6 +198,7 @@ export async function POST(req: Request) {
           currentBranch: sandbox.currentBranch,
           environmentDetails: sandbox.environmentDetails,
         },
+        gatewayConfig: getGatewayConfig(),
         model: mainModelSelection,
         ...(subagentModelSelection
           ? { subagentModel: subagentModelSelection }

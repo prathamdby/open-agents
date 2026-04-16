@@ -18,7 +18,7 @@ export function ProfileSectionSkeleton() {
       <CardHeader>
         <CardTitle>Profile</CardTitle>
         <CardDescription>
-          Your profile information is synced from Vercel.
+          Your profile information is synced from GitHub.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -65,14 +65,14 @@ export function ProfileSection() {
       <CardHeader>
         <CardTitle>Profile</CardTitle>
         <CardDescription>
-          Your profile information is synced from Vercel.
+          Your profile information is synced from GitHub.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-4">
-          {session.user.avatar && (
+          {session.user.avatarUrl && (
             <Image
-              src={session.user.avatar}
+              src={session.user.avatarUrl}
               alt={session.user.username}
               width={64}
               height={64}

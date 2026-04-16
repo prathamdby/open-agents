@@ -1,5 +1,3 @@
-export const DEFAULT_MODEL_ID = "anthropic/claude-haiku-4.5";
-export const APP_DEFAULT_MODEL_ID = "openai/gpt-5.4";
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
 const TOKENS_PER_MILLION = 1_000_000;
 
@@ -8,6 +6,14 @@ export interface GatewayAvailableModel {
   name: string;
   description?: string | null;
   modelType?: string | null;
+}
+
+export function getDefaultModelId(): string {
+  const modelId = process.env.AI_DEFAULT_MODEL_ID;
+  if (!modelId) {
+    throw new Error("AI_DEFAULT_MODEL_ID must be set.");
+  }
+  return modelId;
 }
 
 export interface AvailableModelCostTier {

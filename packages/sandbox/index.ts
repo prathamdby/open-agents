@@ -28,3 +28,6 @@ export {
   type VercelSandboxConnectConfig,
   type VercelState,
 } from "./vercel";
+
+// docker
+export { connectDocker, DockerSandbox, type DockerState } from "./docker";

@@ -1,7 +1,7 @@
-import { checkBotId } from "botid/server";
-import { botIdConfig } from "@/lib/botid";
-import { gateway, generateText } from "ai";
+import { gateway } from "@open-harness/agent";
+import { generateText } from "ai";
 import { z } from "zod";
+import { getGatewayConfig } from "@/lib/gateway-config";
 import { getServerSession } from "@/lib/session/get-server-session";
 
 /**
@@ -17,8 +17,11 @@ export async function generateSessionTitle(
   if (trimmed.length === 0) return null;
 
   try {
+    const gatewayConfig = getGatewayConfig();
     const result = await generateText({
-      model: gateway("anthropic/claude-haiku-4.5"),
+      model: gateway("anthropic/claude-haiku-4.5", {
+        config: gatewayConfig,
+      }),
       prompt: `You are a developer tool that names coding sessions. Generate a concise title (max 5 words) for a coding session based on the user's first message below. The title should help the user quickly identify what this session is about at a glance. Do NOT use quotes or punctuation around the title. Respond with ONLY the title, nothing else.
 
 User message:
@@ -44,11 +47,6 @@ export async function POST(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
-  const botVerification = await checkBotId(botIdConfig);
-  if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
   }
 
   let body: unknown;
